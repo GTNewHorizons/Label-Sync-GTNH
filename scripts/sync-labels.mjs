@@ -618,7 +618,6 @@ async function main() {
 
   await writeChangelog({
     workflowName: dryRun ? "Org-Label-Sync Fake" : "Org-Label-Sync",
-    directoryName: dryRun ? "fake-changelogs" : "changelogs",
     introLines: [
       dryRun ? "Preview mode: true; no label changes were applied" : null,
       usingTargetRepositoryOverride

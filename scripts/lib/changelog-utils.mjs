@@ -12,10 +12,6 @@ function formatUtcTimestamp(date) {
   return date.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
-function formatDatePath(date) {
-  return date.toISOString().slice(0, 10);
-}
-
 function formatWorkflowRunLink(metadata) {
   if (!metadata.serverUrl || !metadata.repository || !metadata.runId) {
     return "Unavailable";
@@ -43,7 +39,7 @@ export function getWorkflowMetadata(workflowName) {
   };
 }
 
-export async function writeChangelog({ workflowName, introLines, sections, directoryName = "changelogs" }) {
+export async function writeChangelog({ workflowName, introLines, sections }) {
   const changedSections = sections.filter((section) => section.hasChanges);
 
   if (changedSections.length === 0) {
@@ -53,11 +49,10 @@ export async function writeChangelog({ workflowName, introLines, sections, direc
 
   const now = new Date();
   const metadata = getWorkflowMetadata(workflowName);
-  const datePath = formatDatePath(now);
   const timestamp = formatUtcTimestamp(now);
   const runId = metadata.runId || `${Date.now()}`;
   const fileName = `${timestamp.replace(/[:]/g, "").replace(/Z$/, "z")}-${slugify(workflowName)}-${runId}.md`;
-  const changelogDir = path.join(process.cwd(), directoryName, datePath);
+  const changelogDir = path.join(process.cwd(), "changelogs");
   const changelogPath = path.join(changelogDir, fileName);
 
   const lines = [

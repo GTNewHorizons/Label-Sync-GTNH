@@ -305,7 +305,6 @@ async function main() {
 
   await writeChangelog({
     workflowName: dryRun ? "Remove-Labels Fake" : "Remove-Labels",
-    directoryName: dryRun ? "fake-changelogs" : "changelogs",
     introLines: [
       dryRun ? "Preview mode: true; no label removals were applied" : null,
       usingTargetRepositoryOverride
