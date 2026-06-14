@@ -13,6 +13,9 @@
   // Used only when "useWhitelist" is false.
   "blacklist": [
     // "do-not-touch",
-    // "your-org-name/private-internal-tools"
+    "Angelica",
+    "CropsNH",
+    "Horizon-QA",
+    "UtilitiesInExcess"
   ]
 }
