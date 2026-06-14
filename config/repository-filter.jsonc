@@ -14,8 +14,16 @@
   "blacklist": [
     // "do-not-touch",
     "Angelica",
+    "AngelicaCompat",
     "CropsNH",
     "Horizon-QA",
-    "UtilitiesInExcess"
+    "UtilitiesInExcess",
+    ".github",
+    ".github-private",
+    "GTNewHorizons.github.io",
+    "DreamAssemblerXXL",
+    "MergeMasterXXL",
+    "ExampleMod1.7.10",
+    "GTNH-Dev-Doc"
   ]
 }
