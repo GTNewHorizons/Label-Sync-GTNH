@@ -15,7 +15,7 @@
   {
     "name": ":construction: Testing on Zeta",
     "color": "d93f0b",
-    "description": "Do not merge yet, testing this PR on Zeta"
+    "description": "Do not merge yet, testing this PR on Zeta (experimental build)"
   },
   {
     "name": ":heavy_check_mark: Tested in full GTNH instance",
@@ -40,12 +40,12 @@
   {
     "name": "AI",
     "color": "1ca75e",
-    "description": ""
+    "description": "This PR was made with heavy AI assistance and needs more thorough review."
   },
   {
     "name": "Bug Fix",
     "color": "7ff74f",
-    "description": "Fix a bug. Please link it in the PR."
+    "description": "Fixes a bug. Please link it in the PR if an issue exists for it."
   },
   {
     "name": "Chore",
@@ -70,7 +70,7 @@
   {
     "name": "Not Ready for Testing",
     "color": "a83303",
-    "description": "PR should not be used in nightlies"
+    "description": "PR should not be tested in Zeta (experimental) yet."
   },
   {
     "name": "Ongoing Freeze - Do NOT Merge",
