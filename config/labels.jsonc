@@ -28,6 +28,11 @@
     "description": "This Pull Request has been tested in a Server/Client setup."
   },
   {
+    "name": "⚠️ AUTHOR MERGE ONLY",
+    "color": "7a0e20",
+    "description": "Do NOT merge this PR unless you are the author."
+  },
+  {
     "name": "❌ There is a Merge Conflict With Another PR",
     "color": "71116b",
     "description": "There is a merge conflict with another PR, so it can not be tested in Dev at this time."
