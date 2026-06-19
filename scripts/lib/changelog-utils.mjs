@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { formatSkippedRepository } from "./repository-selection.mjs";
 
 const defaultChangelogTimeZone = "America/New_York";
 
@@ -50,6 +51,14 @@ function renderSummaryLine(line) {
   return `- **${label}**${value}`;
 }
 
+function isWorkflowRunSummaryLine(line) {
+  return /^\s*workflow run\s*:/i.test(line);
+}
+
+function renderColor(color) {
+  return `\`#${color}\``;
+}
+
 export function getWorkflowMetadata(workflowName) {
   return {
     workflowName,
@@ -61,10 +70,17 @@ export function getWorkflowMetadata(workflowName) {
   };
 }
 
-export async function writeChangelog({ workflowName, introLines = [], summaryLines = null, sections }) {
+export async function writeChangelog({
+  workflowName,
+  introLines = [],
+  summaryLines = null,
+  sections,
+  skippedRepositories = [],
+  failure = null,
+}) {
   const changedSections = sections.filter((section) => section.hasChanges);
 
-  if (changedSections.length === 0) {
+  if (changedSections.length === 0 && skippedRepositories.length === 0 && !failure) {
     console.log("No repository changes detected; changelog was not written to the workflow summary.");
     return null;
   }
@@ -77,11 +93,13 @@ export async function writeChangelog({ workflowName, introLines = [], summaryLin
   const renderedSummaryLines = typeof summaryLines === "function"
     ? summaryLines({ generatedDate, metadata, workflowRun })
     : summaryLines;
+  const visibleSummaryLines = renderedSummaryLines
+    ?.filter((line) => line !== null && !isWorkflowRunSummaryLine(line));
 
-  const lines = renderedSummaryLines ? [
+  const lines = visibleSummaryLines ? [
     `# ${workflowName} Changelog`,
     "",
-    ...renderedSummaryLines.filter((line) => line !== null).map(renderSummaryLine),
+    ...visibleSummaryLines.map(renderSummaryLine),
     "",
     "## Changed Repositories",
     "",
@@ -89,7 +107,6 @@ export async function writeChangelog({ workflowName, introLines = [], summaryLin
     `# ${workflowName} Changelog`,
     "",
     `- Generated: ${timestamp}`,
-    `- Workflow run: ${workflowRun}`,
     metadata.actor ? `- Actor: ${metadata.actor}` : null,
     ...introLines.map((line) => `- ${line}`),
     "",
@@ -97,11 +114,29 @@ export async function writeChangelog({ workflowName, introLines = [], summaryLin
     "",
   ].filter((line) => line !== null);
 
-  for (const section of changedSections) {
-    lines.push(`### ${section.repository}`);
+  if (changedSections.length === 0) {
+    lines.push("- No repository changes detected.");
     lines.push("");
-    lines.push(...section.lines);
+  } else {
+    for (const section of changedSections) {
+      lines.push(`### ${section.repository}`);
+      lines.push("");
+      lines.push(...section.lines);
+      lines.push("");
+    }
+  }
+
+  if (skippedRepositories.length > 0) {
+    lines.push("## Skipped Repositories");
     lines.push("");
+    lines.push(...skippedRepositories.map((skippedRepository) => `- ${formatSkippedRepository(skippedRepository)}`));
+    lines.push("");
+  }
+
+  if (failure) {
+    lines.push("## Workflow Failure");
+    lines.push("");
+    lines.push(`- ${failure.message ?? String(failure)}`);
   }
 
   const changelog = `${lines.join("\n")}\n`;
@@ -137,7 +172,7 @@ export function renderLabelSyncSection(result) {
 
   const created = renderList(
     result.createdLabels,
-    (label) => `Created \`${label.name}\` (#${label.color})${label.description ? `: ${label.description}` : ""}`,
+    (label) => `Created \`${label.name}\` (${renderColor(label.color)})${label.description ? `: ${label.description}` : ""}`,
   );
   if (created) {
     lines.push("Created labels:");
@@ -153,7 +188,7 @@ export function renderLabelSyncSection(result) {
     }
 
     if (entry.before.color !== entry.after.color) {
-      changes.push(`color #${entry.before.color} -> #${entry.after.color}`);
+      changes.push(`color ${renderColor(entry.before.color)} -> ${renderColor(entry.after.color)}`);
     }
 
     if (entry.before.description !== entry.after.description) {

@@ -15,6 +15,7 @@ Features:
 - Optionally delete unmanaged labels during org sync runs
 - Rename labels across repositories while preserving issue and pull request assignments where possible
 - Targeted soft label removal from issues and pull requests across selected repositories
+- Inventory labels currently present across selected repositories
 - Support whitelist or blacklist repository selection
 - Reset selected config files back to default unconfigured versions
 - Write changelogs to GitHub Actions workflow summaries for real workflow changes and dry-run previews
@@ -26,7 +27,7 @@ Features:
 3. Update `config/properties.jsonc` with your organization, source repository, and authentication settings.
 4. Configure `config/repository-filter.jsonc` to choose which repositories should be synced.
 5. Set the labels on the source repository to the label set you want to manage.
-6. Run `Config-Label_Sync` once to populate `config/labels.jsonc`.
+6. Run `Config-Label-Sync` once to populate `config/labels.jsonc`.
 7. Run `Org-Label-Sync` to apply the labels across the selected repositories.
 
 ### Config files
@@ -49,13 +50,15 @@ The configured source repository is always skipped by repository filtering. You 
 - `Config-Reset` resets `repository-filter.jsonc` to empty whitelist mode, which targets no repositories until entries are added
 - GitHub default labels are pruned only when they exactly match `config/github-default-labels.jsonc`
 - Unmanaged label deletion is disabled unless `delete_missing` is enabled on `Org-Label-Sync`
+- Archived repositories are skipped automatically. Workflows that write repository data also skip repositories where the workflow token only has read access.
 
 ## How to use the workflows
 
-This repository includes six GitHub Actions workflows:
+This repository includes seven GitHub Actions workflows:
 
-- `Config-Label_Sync`
+- `Config-Label-Sync`
 - `Config-Reset`
+- `Inventory-Labels`
 - `Validate-Configs`
 - `Reverse-Config-Label-Sync`
 - `Org-Label-Sync`
@@ -66,11 +69,11 @@ This repository includes six GitHub Actions workflows:
 Use this flow when the source repository labels are the source of truth.
 
 1. Edit labels directly on the configured source repository.
-2. Run `Config-Label_Sync`, or run `Org-Label-Sync` and let it call `Config-Label_Sync` first.
+2. Run `Config-Label-Sync`, or run `Org-Label-Sync` and let it call `Config-Label-Sync` first.
 3. Review the generated changes to `config/labels.jsonc` and `config/deleted-labels.jsonc`.
 4. Run `Org-Label-Sync` to apply the managed label set to the selected repositories.
 
-`Config-Label_Sync` reads the current labels on the source repository, rewrites `config/labels.jsonc`, moves removed managed labels into `config/deleted-labels.jsonc`, validates the default-label config, and commits the config update when something changed.
+`Config-Label-Sync` reads the current labels on the source repository, rewrites `config/labels.jsonc`, moves removed managed labels into `config/deleted-labels.jsonc`, validates the default-label config, and commits the config update when something changed.
 
 ### Config-first flow
 
@@ -97,7 +100,7 @@ Inputs:
 
 `label_replacements` is meant for label renames. The old label must exist in `config/deleted-labels.jsonc`, and the new label must exist in `config/labels.jsonc`.
 
-When changes are made, the workflow writes the changelog Markdown directly to the GitHub Actions workflow run summary. Dry runs use the same summary format and are marked as test-mode output. Workflow summaries are retained according to GitHub Actions run retention settings.
+When changes are made, the workflow writes the changelog Markdown directly to the GitHub Actions workflow run summary. Dry runs use the same summary format and are marked as test-mode output. If the run fails after processing some repositories, the workflow still writes the accumulated changelog before failing. Workflow summaries are retained according to GitHub Actions run retention settings.
 
 ### Remove-Labels
 
@@ -113,7 +116,19 @@ Inputs:
 - `label_name`: exact label name to remove
 - `repositories`: comma-separated override for the target repository list
 
-Like `Org-Label-Sync`, changelog Markdown is written directly to the GitHub Actions workflow run summary. Dry runs use the same summary format and are marked as test-mode output.
+Like `Org-Label-Sync`, changelog Markdown is written directly to the GitHub Actions workflow run summary. Dry runs use the same summary format and are marked as test-mode output. If the run fails after processing some repositories, the workflow still writes the accumulated changelog before failing.
+
+### Inventory-Labels
+
+Run `Inventory-Labels` manually when you want an inventory of labels currently present on selected repositories.
+
+Inputs:
+
+- `exclude_configured_labels`: exclude labels whose name, color, and description exactly match a label in `config/labels.jsonc`
+- `list_similarities`: append a shared-label count and a section listing exact label specs shared by two or more selected repositories, with each matching repository listed under the label
+- `repositories`: comma-separated override for the target repository list
+
+Inventory skips archived repositories, but keeps non-archived read-only repositories because inventory does not write to them. If the run fails after inventorying some repositories, the workflow still writes the accumulated inventory summary before failing.
 
 ### Config-Reset
 
