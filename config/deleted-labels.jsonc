@@ -11,21 +11,6 @@
 // ]
 [
   {
-    "name": "ongoing freeze - don't merge",
-    "color": "e99695",
-    "description": "Not just a bug fix and thus affected by a current freeze for a upcoming version"
-  },
-  {
-    "name": "question",
-    "color": "cc317c",
-    "description": ""
-  },
-  {
-    "name": "wontfix",
-    "color": "ffffff",
-    "description": ""
-  },
-  {
     "name": "after new stable",
     "color": "006b75",
     "description": ""
@@ -48,6 +33,21 @@
   {
     "name": "invalid",
     "color": "e6e6e6",
+    "description": ""
+  },
+  {
+    "name": "ongoing freeze - don't merge",
+    "color": "e99695",
+    "description": "Not just a bug fix and thus affected by a current freeze for a upcoming version"
+  },
+  {
+    "name": "question",
+    "color": "cc317c",
+    "description": ""
+  },
+  {
+    "name": "wontfix",
+    "color": "ffffff",
     "description": ""
   }
 ]
