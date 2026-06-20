@@ -17,7 +17,7 @@ import {
 } from "./lib/config-validation.mjs";
 import { renderLabelSyncSection, writeChangelog } from "./lib/changelog-utils.mjs";
 import {
-  filterEligibleRepositories,
+  filterRepositoriesForWriteMode,
   filterRepositories,
   isSourceRepository,
   repositoryAliases,
@@ -620,9 +620,9 @@ async function main() {
   const selectedRepositories = usingTargetRepositoryOverride
     ? applyTargetRepositoryOverride(discoveredRepositories, orgName, properties.sourceRepository)
     : filterRepositories(discoveredRepositories, orgName, repositoryFilter, properties.sourceRepository);
-  const { repositories, skippedRepositories } = filterEligibleRepositories(
+  const { repositories, skippedRepositories } = filterRepositoriesForWriteMode(
     selectedRepositories,
-    { orgName, requireWriteAccess: true },
+    { orgName, dryRun },
   );
 
   if (usingTargetRepositoryOverride) {

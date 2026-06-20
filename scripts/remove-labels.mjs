@@ -3,7 +3,7 @@ import { assert, normalizeName, readJsonc } from "./lib/config-utils.mjs";
 import { validateProperties, validateRepositoryFilter } from "./lib/config-validation.mjs";
 import { renderRemoveLabelsSection, writeChangelog } from "./lib/changelog-utils.mjs";
 import {
-  filterEligibleRepositories,
+  filterRepositoriesForWriteMode,
   filterRepositories,
   isSourceRepository,
   repositoryAliases,
@@ -299,9 +299,9 @@ async function main() {
       repositoryFilter,
       properties.sourceRepository,
     );
-  const { repositories, skippedRepositories } = filterEligibleRepositories(
+  const { repositories, skippedRepositories } = filterRepositoriesForWriteMode(
     selectedRepositories,
-    { orgName: properties.organization, requireWriteAccess: true },
+    { orgName: properties.organization, dryRun },
   );
 
   if (usingTargetRepositoryOverride) {
