@@ -86,6 +86,13 @@ export function filterEligibleRepositories(repositories, { orgName = "", require
   };
 }
 
+export function filterRepositoriesForWriteMode(repositories, { orgName = "", dryRun = false } = {}) {
+  return filterEligibleRepositories(
+    repositories,
+    { orgName, requireWriteAccess: !dryRun },
+  );
+}
+
 export function formatSkippedRepository(skippedRepository) {
   return `\`${skippedRepository.repository}\` - ${skippedRepository.reason}`;
 }
