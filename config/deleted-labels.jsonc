@@ -9,4 +9,55 @@
 //     "description": "No recent activity"
 //   }
 // ]
-[]
+[
+  {
+    "name": "ongoing freeze - don't merge",
+    "color": "e99695",
+    "description": "Not just a bug fix and thus affected by a current freeze for a upcoming version"
+  },
+  {
+    "name": "question",
+    "color": "cc317c",
+    "description": ""
+  },
+  {
+    "name": "wontfix",
+    "color": "ffffff",
+    "description": ""
+  },
+  {
+    "name": "after new stable",
+    "color": "006b75",
+    "description": ""
+  },
+  {
+    "name": "bug",
+    "color": "ee0701",
+    "description": ""
+  },
+  {
+    "name": "bug",
+    "color": "fc2929",
+    "description": ""
+  },
+  {
+    "name": "duplicate",
+    "color": "cccccc",
+    "description": ""
+  },
+  {
+    "name": "help wanted",
+    "color": "128a0c",
+    "description": ""
+  },
+  {
+    "name": "help wanted",
+    "color": "159818",
+    "description": ""
+  },
+  {
+    "name": "invalid",
+    "color": "e6e6e6",
+    "description": ""
+  }
+]
