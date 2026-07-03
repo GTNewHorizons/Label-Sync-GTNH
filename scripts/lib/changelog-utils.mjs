@@ -69,6 +69,43 @@ function renderColor(color) {
   return `\`#${color}\``;
 }
 
+function renderLabelFieldChanges(before, after) {
+  const changes = [];
+  const beforeDescription = before.description ?? "";
+  const afterDescription = after.description ?? "";
+
+  if (before.name !== after.name) {
+    changes.push(`name \`${before.name}\` -> \`${after.name}\``);
+  }
+
+  if (before.color !== after.color) {
+    changes.push(`color ${renderColor(before.color)} -> ${renderColor(after.color)}`);
+  }
+
+  if (beforeDescription !== afterDescription) {
+    changes.push(`description \`${beforeDescription}\` -> \`${afterDescription}\``);
+  }
+
+  return changes;
+}
+
+function renderLabelFieldChangeSuffix(before, after) {
+  const changes = renderLabelFieldChanges(before, after);
+
+  if (changes.length === 0) {
+    return "";
+  }
+
+  return `: ${changes.join(", ")}`;
+}
+
+function renderLabelReplacementLine(oldName, before, after, affectedSuffix = "") {
+  const fallbackDetails = `: name \`${oldName}\` -> \`${after.name}\``;
+  const details = before && after ? renderLabelFieldChangeSuffix(before, after) || fallbackDetails : fallbackDetails;
+
+  return `Replaced \`${oldName}\`${details}${affectedSuffix}`;
+}
+
 function formatCount(count, singular, plural) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
@@ -191,15 +228,16 @@ export async function writeChangelog({
 export function renderLabelSyncSection(result) {
   const lines = [];
 
-  const replacements = renderList(result.labelReplacements, (entry) => {
-    const affectedSuffix = formatAffectedSuffix(entry);
+  const replacementEntries = [
+    ...result.labelReplacements.map((entry) => {
+      const affectedSuffix = formatAffectedSuffix(entry);
+      const after = entry.after ?? { name: entry.newName };
 
-    if (entry.mode === "renamed") {
-      return `Renamed \`${entry.oldName}\` to \`${entry.newName}\`${affectedSuffix}`;
-    }
-
-    return `Replaced \`${entry.oldName}\` with \`${entry.newName}\`${affectedSuffix}`;
-  });
+      return renderLabelReplacementLine(entry.oldName, entry.before, after, affectedSuffix);
+    }),
+    ...result.updatedLabels.map((entry) => renderLabelReplacementLine(entry.before.name, entry.before, entry.after)),
+  ];
+  const replacements = renderList(replacementEntries, (entry) => entry);
   pushRenderedList(lines, "Label replacements:", replacements);
 
   const created = renderList(
@@ -207,25 +245,6 @@ export function renderLabelSyncSection(result) {
     (label) => `Created \`${label.name}\` (${renderColor(label.color)})${label.description ? `: ${label.description}` : ""}`,
   );
   pushRenderedList(lines, "Created labels:", created);
-
-  const updated = renderList(result.updatedLabels, (entry) => {
-    const changes = [];
-
-    if (entry.before.name !== entry.after.name) {
-      changes.push(`name \`${entry.before.name}\` -> \`${entry.after.name}\``);
-    }
-
-    if (entry.before.color !== entry.after.color) {
-      changes.push(`color ${renderColor(entry.before.color)} -> ${renderColor(entry.after.color)}`);
-    }
-
-    if (entry.before.description !== entry.after.description) {
-      changes.push(`description \`${entry.before.description}\` -> \`${entry.after.description}\``);
-    }
-
-    return `Updated \`${entry.before.name}\`: ${changes.join(", ")}`;
-  });
-  pushRenderedList(lines, "Updated labels:", updated);
 
   const deletedConfigured = renderList(
     result.deletedConfiguredLabels,
