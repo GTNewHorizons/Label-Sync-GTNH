@@ -5,6 +5,7 @@ import {
   filterEligibleRepositories,
   filterRepositoriesForWriteMode,
   formatSkippedRepository,
+  hasTokenWriteAccess,
   parseTokenPermissions,
 } from "../scripts/lib/repository-selection.mjs";
 
@@ -145,6 +146,80 @@ test("filterRepositoriesForWriteMode keeps repositories when token has label wri
   assert.deepEqual(skippedRepositories, []);
 });
 
+test("filterEligibleRepositories can use contents write token permissions for workflow distribution", () => {
+  const repositories = [
+    {
+      full_name: "example/app-token-contents-write",
+      name: "app-token-contents-write",
+      archived: false,
+      permissions: { pull: true, push: false, maintain: false, admin: false },
+    },
+  ];
+
+  const { repositories: eligible, skippedRepositories } = filterEligibleRepositories(
+    repositories,
+    {
+      requireWriteAccess: true,
+      tokenPermissions: { contents: "write" },
+      tokenWritePermission: "contents",
+    },
+  );
+
+  assert.deepEqual(eligible.map((repository) => repository.full_name), ["example/app-token-contents-write"]);
+  assert.deepEqual(skippedRepositories, []);
+});
+
+test("hasTokenWriteAccess requires every workflow distribution permission", () => {
+  const requiredPermissions = ["contents", "workflows", "pull_requests"];
+
+  assert.equal(
+    hasTokenWriteAccess(
+      { contents: "write", workflows: "write", pull_requests: "write" },
+      requiredPermissions,
+    ),
+    true,
+  );
+  assert.equal(
+    hasTokenWriteAccess(
+      { contents: "write", workflows: "read", pull_requests: "write" },
+      requiredPermissions,
+    ),
+    false,
+  );
+  assert.equal(
+    hasTokenWriteAccess(
+      { contents: "write", workflows: "write" },
+      requiredPermissions,
+    ),
+    false,
+  );
+});
+
+test("filterEligibleRepositories skips GitHub App installations missing workflow distribution permissions", () => {
+  const repositories = [
+    {
+      full_name: "example/incomplete-app-permissions",
+      name: "incomplete-app-permissions",
+      archived: false,
+      permissions: { pull: true, push: true },
+    },
+  ];
+
+  const { repositories: eligible, skippedRepositories } = filterEligibleRepositories(
+    repositories,
+    {
+      requireWriteAccess: true,
+      tokenPermissions: { contents: "write", workflows: "write", pull_requests: "read" },
+      tokenWritePermission: ["contents", "workflows", "pull_requests"],
+    },
+  );
+
+  assert.deepEqual(eligible, []);
+  assert.deepEqual(skippedRepositories, [
+    { repository: "example/incomplete-app-permissions", reason: "read-only" },
+  ]);
+});
+
 test("parseTokenPermissions returns token permissions from a JSON object string", () => {
   assert.deepEqual(
     parseTokenPermissions('{"issues":"write","contents":"read"}'),
@@ -155,6 +230,6 @@ test("parseTokenPermissions returns token permissions from a JSON object string"
 test("formatSkippedRepository renders a stable skipped repository list item", () => {
   assert.equal(
     formatSkippedRepository({ repository: "example/archive", reason: "archived" }),
-    "`example/archive` - archived",
+    "[example/archive](https://github.com/example/archive) - archived",
   );
 });

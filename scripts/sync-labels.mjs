@@ -10,6 +10,7 @@ import {
 } from "./lib/config-utils.mjs";
 import {
   assertNoManagedDeletedLabelOverlap,
+  parseLabelReplacements,
   validateDeletedLabels,
   validateGithubDefaultLabels,
   validateLabels,
@@ -61,37 +62,6 @@ function parseRepositoryFilter(value) {
   );
 }
 
-function parseLabelReplacements(value) {
-  if (!value || !value.trim()) {
-    return [];
-  }
-
-  const seenOldNames = new Set();
-
-  return value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .map((entry) => {
-      const separatorIndex = entry.indexOf("=");
-      assert(separatorIndex > 0 && separatorIndex < entry.length - 1, `Invalid label replacement "${entry}". Use old=new.`);
-      assert(entry.indexOf("=", separatorIndex + 1) === -1, `Invalid label replacement "${entry}". Label replacement names cannot contain "=".`);
-
-      const oldName = entry.slice(0, separatorIndex).trim();
-      const newName = entry.slice(separatorIndex + 1).trim();
-      assert(oldName, `Invalid label replacement "${entry}". Old label name is empty.`);
-      assert(newName, `Invalid label replacement "${entry}". New label name is empty.`);
-
-      const oldKey = normalizeName(oldName);
-      const newKey = normalizeName(newName);
-      assert(oldKey !== newKey, `Label replacement "${entry}" points to the same normalized label name.`);
-      assert(!seenOldNames.has(oldKey), `Duplicate label replacement source detected: "${oldName}".`);
-      seenOldNames.add(oldKey);
-
-      return { oldName, newName, oldKey, newKey };
-    });
-}
-
 function formatDisplayBoolean(value) {
   return value ? "True" : "False";
 }
@@ -108,12 +78,59 @@ function formatSpecifiedReplacements(replacements) {
   return replacements.map((replacement) => `${replacement.oldName} -> ${replacement.newName}`).join(", ");
 }
 
-function summarizeChangelogResults(results) {
+export function renderLabelSyncSummaryLines({
+  generatedDate,
+  metadata,
+  dryRun,
+  usingTargetRepositoryOverride,
+  activeFilterMode,
+  deleteGithubDefaultLabels,
+  deleteMissing,
+  skippedRepositories,
+  changelogSummary,
+  labelReplacements,
+}) {
+  return [
+    `Generated On: ${generatedDate}`,
+    `Actor: ${metadata.actor || "Unavailable"}`,
+    `Test Mode: ${formatDisplayBoolean(dryRun)}`,
+    `Repo Filter Mode: ${formatRepositoryFilterMode(usingTargetRepositoryOverride, activeFilterMode)}`,
+    `Default Label Delete Mode: ${formatDisplayBoolean(deleteGithubDefaultLabels)}`,
+    `Unlisted Label Delete Mode: ${formatDisplayBoolean(deleteMissing)}`,
+    `Repositories Affected: ${changelogSummary.repositoriesAffected}`,
+    `Repositories Skipped: ${skippedRepositories.length}`,
+    `Created Labels: ${changelogSummary.createdLabels}`,
+    `Deleted Labels: ${changelogSummary.deletedLabels}`,
+    `Replaced Labels: ${changelogSummary.replacedLabels}`,
+    changelogSummary.replacedLabels > 0 && labelReplacements.length > 0
+      ? `Specified Replacements: ${formatSpecifiedReplacements(labelReplacements)}`
+      : null,
+    `Total Issues Affected: ${changelogSummary.affectedIssues}`,
+    `Total PRs Affected: ${changelogSummary.affectedPullRequests}`,
+  ];
+}
+
+function getAffectedIssues(entry) {
+  return entry.affectedIssues ?? entry.matchedIssues ?? 0;
+}
+
+function getAffectedPullRequests(entry) {
+  return entry.affectedPullRequests ?? entry.matchedPullRequests ?? 0;
+}
+
+export function summarizeChangelogResults(results) {
   return results.reduce(
     (summary, result) => {
       if (result.hasChanges) {
         summary.repositoriesAffected += 1;
       }
+
+      const affectedEntries = [
+        ...result.labelReplacements,
+        ...result.deletedConfiguredLabels,
+        ...result.deletedGithubDefaultLabels,
+        ...result.deletedMissingLabels,
+      ];
 
       summary.createdLabels += result.createdLabels.length;
       summary.deletedLabels += (
@@ -122,6 +139,8 @@ function summarizeChangelogResults(results) {
         + result.deletedMissingLabels.length
       );
       summary.replacedLabels += result.labelReplacements.length;
+      summary.affectedIssues += affectedEntries.reduce((count, entry) => count + getAffectedIssues(entry), 0);
+      summary.affectedPullRequests += affectedEntries.reduce((count, entry) => count + getAffectedPullRequests(entry), 0);
 
       return summary;
     },
@@ -130,6 +149,8 @@ function summarizeChangelogResults(results) {
       createdLabels: 0,
       deletedLabels: 0,
       replacedLabels: 0,
+      affectedIssues: 0,
+      affectedPullRequests: 0,
     },
   );
 }
@@ -696,22 +717,18 @@ async function main() {
     await writeChangelog({
       workflowName: dryRun ? "Org-Label-Sync Fake" : "Org-Label-Sync",
       dryRun,
-      summaryLines: ({ generatedDate, metadata }) => [
-        `Generated On: ${generatedDate}`,
-        `Actor: ${metadata.actor || "Unavailable"}`,
-        `Test Mode: ${formatDisplayBoolean(dryRun)}`,
-        `Repo Filter Mode: ${formatRepositoryFilterMode(usingTargetRepositoryOverride, activeFilterMode)}`,
-        `Default Label Delete Mode: ${formatDisplayBoolean(deleteGithubDefaultLabels)}`,
-        `Unlisted Label Delete Mode: ${formatDisplayBoolean(deleteMissing)}`,
-        `Repositories Affected: ${changelogSummary.repositoriesAffected}`,
-        `Repositories Skipped: ${skippedRepositories.length}`,
-        `Created Labels: ${changelogSummary.createdLabels}`,
-        `Deleted Labels: ${changelogSummary.deletedLabels}`,
-        `Replaced Labels: ${changelogSummary.replacedLabels}`,
-        changelogSummary.replacedLabels > 0 && labelReplacements.length > 0
-          ? `Specified Replacements: ${formatSpecifiedReplacements(labelReplacements)}`
-          : null,
-      ],
+      summaryLines: ({ generatedDate, metadata }) => renderLabelSyncSummaryLines({
+        generatedDate,
+        metadata,
+        dryRun,
+        usingTargetRepositoryOverride,
+        activeFilterMode,
+        deleteGithubDefaultLabels,
+        deleteMissing,
+        skippedRepositories,
+        changelogSummary,
+        labelReplacements,
+      }),
       skippedRepositories,
       failure,
       sections: results.map(renderLabelSyncSection),
