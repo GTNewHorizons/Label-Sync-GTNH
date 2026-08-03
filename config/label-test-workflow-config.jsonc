@@ -35,7 +35,7 @@
   "protectedLabelApprovals": [
     // { "label": "Affects Balance", "approver": "teams/admin" },
     // { "label": "Affects Balance", "approver": "UltraProdigy" }
-    { "label": "Affects Balance", "approver": "teams/Admin" },
+    { "label": "Affects Balance", "approver": "teams/Balancing Review" },
     { "label": "Requires Admin", "approver": "teams/Admin" },
     { "label": "Asset Change", "approver": "teams/Admin" }
   ],
