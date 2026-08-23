@@ -73,6 +73,11 @@
     "description": "PRs that are frozen until further notice, the time for the NH team to decide what to do with it."
   },
   {
+    "name": "Mobile",
+    "color": "41cdd6",
+    "description": "This PR is related to GTNH Mobile."
+  },
+  {
     "name": "New Feature",
     "color": "56964a",
     "description": "Add something new. Please explain in detail how it works."
