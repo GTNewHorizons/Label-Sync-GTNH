@@ -16,7 +16,8 @@
     "Refactor",
     "Safe for Stable",
     "Asset Change",
-    "Requires Admin"
+    "Requires Admin",
+    "Mobile"
   ],
 
   // Any matching PR label in this list fails the check.
