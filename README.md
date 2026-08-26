@@ -169,6 +169,9 @@ The rules live only in `config/label-test-workflow-config.jsonc` in this reposit
     // "Blocked",
     // "Do Not Merge"
   ],
+  "ignoredPullRequestAuthors": [
+    // "github-actions[bot]"
+  ],
   "repositoryLabels": {
     // "your-org-name/special-repo": {
     //   "requiredLabels": ["Repo Feature"],
@@ -191,6 +194,7 @@ Behavior:
 - If `requiredLabels` is empty, the required-label gate is disabled and the check can pass with any labels or no labels.
 - If `requiredLabels` has entries, a PR must have at least one matching label.
 - Any matching `failingLabels` entry fails the check.
+- Pull requests opened by a login in `ignoredPullRequestAuthors` pass without applying label or protected-approval rules. Login matching is case-insensitive.
 - `repositoryLabels` keys must use the full, case-insensitive `owner/repository` name. Their required and failing labels are added to the organization-wide lists only for that repository.
 - A repository-specific required label enables the required-label gate for that repository even when the organization-wide `requiredLabels` list is empty.
 - Failing labels override required labels.
@@ -202,7 +206,7 @@ Repository-specific rules are resolved centrally from the calling workflow's exi
 
 For team approval checks, the workflow token must be able to read the configured organization team membership. The same `properties.authentication` setup used by the label sync workflows is used for the reusable Label Test workflow.
 
-The policy job runs on `pull_request_target` only. Review submissions, edits, and dismissals are recorded by a separate unprivileged workflow, then the existing Label Test workflow handles its completion through `workflow_run` and reruns the latest completed policy run for that pull request. This lets a new approval replace an earlier failed result on the same required check.
+The policy job runs on `pull_request_target` only. Review submissions, edits, and dismissals are recorded by a separate unprivileged workflow, then the existing Label Test workflow handles its completion through `workflow_run` and reruns the latest completed policy run for that pull request. This lets a new approval replace an earlier failed result on the same required check. If GitHub suppressed the initial run because an ignored author created the pull request with `GITHUB_TOKEN`, the review continuation posts the required successful `label-test / label-test` commit status instead. This fallback occurs only after a human review event and only when no run exists for the pull request's exact head commit; it never reuses an older run from a recycled bot branch.
 
 Fork `pull_request_review` runs cannot access repository secrets or an `actions: write` token. The review workflow therefore only uploads the pull request number as a short-lived artifact. Its `workflow_run` continuation executes from the target repository's default branch with the configured authentication, downloads the artifact outside the workspace, and verifies the referenced pull request still has the head SHA recorded by GitHub for the review run before calling the Actions rerun API. Neither stage checks out or executes pull request code.
 
