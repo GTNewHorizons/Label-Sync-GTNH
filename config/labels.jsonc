@@ -70,7 +70,7 @@
   {
     "name": "Frozen PR",
     "color": "63b4dd",
-    "description": "PRs that are frozen until further notice, the time for the NH team to decide what to do with it."
+    "description": "PRs that are frozen until further notice; the NH team will discuss what to do with it."
   },
   {
     "name": "Mobile",
@@ -90,7 +90,7 @@
   {
     "name": "Ongoing Freeze - Do NOT Merge",
     "color": "e99695",
-    "description": "PR tagged with this do not meet the requirement to be merged during a freeze."
+    "description": "For PRs submitted close to a release that must wait for the next dev cycle to merge."
   },
   {
     "name": "Performance",
