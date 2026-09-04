@@ -22,6 +22,7 @@ Features:
 - Write changelogs to GitHub Actions workflow summaries for real workflow changes and dry-run previews
 - Enforce centrally configured PR label requirements through a reusable required-check workflow
 - Distribute PR label-test caller workflows to selected organization repositories
+- Copy all labels directly between two repositories, optionally making the receiving label set match exactly
 
 ## How to setup
 
@@ -59,7 +60,7 @@ The configured source repository is always skipped by repository filtering. You 
 
 ## How to use the workflows
 
-This repository includes ten operational GitHub Actions workflows:
+This repository includes eleven operational GitHub Actions workflows:
 
 - `02 - Config-Label-Sync`
 - `Config-Reset`
@@ -71,6 +72,7 @@ This repository includes ten operational GitHub Actions workflows:
 - `Reverse-Config-Label-Sync`
 - `01 - Org-Label-Sync`
 - `04 - Remove-Labels`
+- `06 - Transfer-Labels`
 
 ### Recommended sync flow
 
@@ -237,6 +239,27 @@ The distributor skips archived repositories, empty repositories with no default-
 In `Direct Commit` mode, a repository whose default branch is protected is recorded as a failure and the run continues to the next repository. Branch protection is a property of the target repository rather than an operational fault, so it says nothing about whether the remaining repositories will succeed. Rerun those repositories in `Pull Request` mode. The distributor does not attempt to bypass branch protection, and the token it uses is not granted the rights to do so.
 
 After the workflows are merged into a target repository, make only `Label Test / label-test / label-test` required in that repository's branch protection rules. Do not require `Refresh Label Test`; it is an operational helper. The target repository's Actions policy must allow the refresher's requested `actions: write` permission so it can rerun the policy workflow.
+
+### 06 - Transfer-Labels
+
+Run `06 - Transfer-Labels` manually to copy all label names, colors, and descriptions directly from one repository to another.
+
+Inputs, in workflow form order:
+
+- `dry_run`: the first checkbox, off by default; previews the transfer in the workflow summary without modifying either repository
+- `override_existing`: off by default; makes the receiving repository's labels match the source exactly, including updating matching labels and deleting any labels absent from the source
+- `source_repository`: starting repository, as `repo-name` or `owner/repo-name`
+- `target_repository`: receiving repository, as `repo-name` or `owner/repo-name`
+
+Short names use the organization in `config/properties.jsonc`. Full names may reference other owners when the configured token can access both repositories. The workflow uses the existing PAT or GitHub App authentication settings and needs label write access to the receiving repository.
+
+With override unchecked, the workflow only creates labels whose names are missing from the receiving repository. Existing labels keep their current names, colors, and descriptions, including when the source has a matching name with different capitalization. With override checked, matching labels are updated in place to preserve their issue and pull request assignments. Labels absent from the source are deleted after all additions and updates succeed; deleting those labels also removes their existing assignments. An empty source deletes all receiving labels only when override is checked.
+
+Both inputs select repositories directly, independently of the configured sync source and repository filters. The source is only read, and selecting the same repository for both inputs is rejected. Archived receiving repositories are skipped; read-only receiving repositories are skipped for live transfers but can be previewed in test mode.
+
+Override mode stops before any changes if the receiving repository has a label named `.` or `..`, because those names cannot be safely addressed through the label API's URL path.
+
+The workflow uses the Org-Label-Sync changelog layout in the GitHub Actions run summary, showing the source and receiving repositories, test and override settings, starting label counts, and created, updated, deleted, and retained counts. Retained labels are existing receiving labels left unchanged. Preview changelogs are marked as test-mode output. If the transfer fails partway through, the summary records completed changes and the failure; rerunning continues from the current label state.
 
 ### Config-Reset
 
