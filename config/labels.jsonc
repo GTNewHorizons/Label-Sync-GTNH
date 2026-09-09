@@ -53,6 +53,11 @@
     "description": "Changes assets, usually textures, and nothing more."
   },
   {
+    "name": "Breaking Change",
+    "color": "fc7a7b",
+    "description": "When a PR involves a recipe, structure, or other change that will break existing setups."
+  },
+  {
     "name": "Bug Fix",
     "color": "7ff74f",
     "description": "Fixes a bug. Please link it in the PR if an issue exists for it."
