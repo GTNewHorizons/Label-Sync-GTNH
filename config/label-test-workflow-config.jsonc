@@ -82,7 +82,9 @@
       "MergeMasterXXL",
       "ExampleMod1.7.10",
       "GTNH-Dev-Doc",
-      "gtnh-nightly-updater"
+      "gtnh-nightly-updater",
+      "Dupes-Exploits-GTNH",
+      "Mobile-Issues-Tracker"
     ]
   }
 }
