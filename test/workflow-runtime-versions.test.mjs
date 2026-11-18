@@ -86,8 +86,9 @@ test("the reusable label test routes policy and refresh events inside one job", 
   assert.match(workflow, /workflow_call:/);
   assert.match(workflow, /review_signal_run_id:/);
   assert.match(workflow, /review_signal_head_sha:/);
-  assert.match(workflow, /actions:\s*read/);
-  assert.doesNotMatch(workflow, /actions:\s*write/);
+  // GITHUB_TOKEN reruns the policy run after a review, so the configured App needs no Actions access.
+  assert.match(workflow, /actions:\s*write/);
+  assert.match(workflow, /RERUN_TOKEN:\s*\$\{\{ github\.token \}\}/);
   assert.match(workflow, /jobs:\s*\n\s*label-test:\s*\n\s*runs-on:/);
   assert.equal(workflow.match(/^ {2}[a-z0-9-]+:$/gm).length, 1);
   assert.match(workflow, /name: Download review context\s*\n\s*if:\s*\$\{\{ github\.event_name == 'workflow_run' \}\}/);
@@ -96,7 +97,11 @@ test("the reusable label test routes policy and refresh events inside one job", 
   assert.match(workflow, /name: Check PR labels and approvals\s*\n\s*if:\s*\$\{\{ github\.event_name == 'pull_request_target' \}\}/);
   assert.match(workflow, /run:\s*node scripts\/check-pr-label-policy\.mjs/);
   assert.match(workflow, /issues:\s*read/);
-  assert.match(workflow, /pull-requests:\s*write/);
+  // Label and comment calls use the configured token; GITHUB_TOKEN downloads the artifact, posts the
+  // ignored-author status and reruns runs, so it never writes to pull requests.
+  assert.match(workflow, /pull-requests:\s*read/);
+  assert.doesNotMatch(workflow, /pull-requests:\s*write/);
+  assert.match(workflow, /statuses:\s*write/);
   assert.match(workflow, /LABEL_EVENT_ACTION:\s*\$\{\{ github\.event\.action \}\}/);
   assert.match(workflow, /LABEL_EVENT_LABEL:\s*\$\{\{ github\.event\.label\.name \}\}/);
   assert.match(workflow, /LABEL_EVENT_SENDER:\s*\$\{\{ github\.event\.sender\.login \}\}/);

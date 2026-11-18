@@ -64,7 +64,6 @@ jobs:
         env:
           AUTH_MODE: pat
           PAT_TOKEN: ${{ secrets[steps.properties.outputs.pat_token_secret_name] }}
-          GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/create-github-auth-token.mjs
 
       - name: Resolve GitHub App auth token
@@ -72,14 +71,13 @@ jobs:
         if: ${{ steps.properties.outputs.auth_mode == 'githubApp' }}
         env:
           AUTH_MODE: githubApp
-          GITHUB_APP_ID: ${{ secrets[steps.properties.outputs.github_app_id_secret_name] }}
           GITHUB_APP_PRIVATE_KEY: ${{ secrets[steps.properties.outputs.github_app_private_key_secret_name] }}
-          GITHUB_APP_INSTALLATION_ID: ${{ secrets[steps.properties.outputs.github_app_installation_id_secret_name] }}
         run: node scripts/create-github-auth-token.mjs
 
       - name: Rerun authoritative Label Test
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          RERUN_TOKEN: ${{ github.token }}
           TARGET_REPOSITORY: ${{ github.repository }}
           PULL_REQUEST_NUMBER_FILE: ${{ runner.temp }}/label-test-review-context/pr-number.txt
           REVIEW_SIGNAL_HEAD_SHA: ${{ inputs.review_signal_head_sha }}

@@ -1,21 +1,21 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { assert, normalizeName, readJsonc } from "./lib/config-utils.mjs";
-import {
-  validateLabelTestWorkflowConfig,
-  validateProperties,
-} from "./lib/config-validation.mjs";
+import { validateLabelTestWorkflowConfig, validateProperties } from "./lib/config-validation.mjs";
 import {
   buildStickyLabelComment,
+  describeReviewer,
   evaluatePrLabelTest,
   findStickyLabelsToRestore,
+  formatReviewRequest,
+  formatReviewWithdrawal,
   formatStickyRestoration,
   isIgnoredPullRequestAuthor,
+  planReviewRequests,
 } from "./lib/label-test-workflow.mjs";
 
 const workspaceRoot = process.cwd();
 const propertiesPath = path.join(workspaceRoot, "config", "properties.jsonc");
-const labelTestWorkflowConfigPath = path.join(workspaceRoot, "config", "label-test-workflow-config.jsonc");
 const validateOnly = process.argv.includes("--validate-only");
 
 async function githubRequest(token, method, apiPath, body, { allowNotFound = false } = {}) {
@@ -36,7 +36,9 @@ async function githubRequest(token, method, apiPath, body, { allowNotFound = fal
 
   if (!response.ok) {
     const message = await response.text();
-    throw new Error(`${method} ${apiPath} failed with ${response.status}: ${message}`);
+    const error = new Error(`${method} ${apiPath} failed with ${response.status}: ${message}`);
+    error.status = response.status;
+    throw error;
   }
 
   if (response.status === 204) {
@@ -73,6 +75,44 @@ async function getPullRequestIssueEvents(token, repository, pullRequestNumber) {
 
 async function addPullRequestLabels(token, repository, pullRequestNumber, labels) {
   return githubRequest(token, "POST", `/repos/${repository}/issues/${pullRequestNumber}/labels`, { labels });
+}
+
+async function getPullRequest(token, repository, pullRequestNumber) {
+  return githubRequest(token, "GET", `/repos/${repository}/pulls/${pullRequestNumber}`);
+}
+
+function reviewerRequestBody(reviewer) {
+  return reviewer.type === "team"
+    ? { reviewers: [], team_reviewers: [reviewer.slug] }
+    : { reviewers: [reviewer.login], team_reviewers: [] };
+}
+
+async function requestPullRequestReviewer(token, repository, pullRequestNumber, reviewer) {
+  return githubRequest(
+    token,
+    "POST",
+    `/repos/${repository}/pulls/${pullRequestNumber}/requested_reviewers`,
+    reviewerRequestBody(reviewer),
+  );
+}
+
+async function removePullRequestReviewer(token, repository, pullRequestNumber, reviewer) {
+  return githubRequest(
+    token,
+    "DELETE",
+    `/repos/${repository}/pulls/${pullRequestNumber}/requested_reviewers`,
+    reviewerRequestBody(reviewer),
+  );
+}
+
+// The issue events timeline is shared by sticky labels and review requests, so it is fetched at most once
+// per run and only when one of them needs it.
+function createIssueEventsLoader(token, repository, pullRequestNumber) {
+  let eventsPromise = null;
+  return () => {
+    eventsPromise ??= getPullRequestIssueEvents(token, repository, pullRequestNumber);
+    return eventsPromise;
+  };
 }
 
 async function getPullRequestComments(token, repository, pullRequestNumber) {
@@ -158,6 +198,8 @@ async function restoreStickyLabels({
   pullRequestIssue,
   labels,
   isTeamMember,
+  isAutomationActor,
+  loadIssueEvents,
 }) {
   if (config.stickyLabels.length === 0 || isIgnoredPullRequestAuthor(config, pullRequestIssue?.user?.login)) {
     return labels;
@@ -170,14 +212,14 @@ async function restoreStickyLabels({
     return labels;
   }
 
-  const labelEvents = await getPullRequestIssueEvents(token, targetRepository, pullRequestNumber);
+  const labelEvents = await loadIssueEvents();
   const restorations = await findStickyLabelsToRestore({
     config,
     prLabels: labels,
     labelEvents,
     triggeringEvent: readTriggeringLabelEvent(),
     isTeamMember,
-    isAutomationActor: createAutomationActorChecker(token),
+    isAutomationActor,
   });
 
   if (restorations.length === 0) {
@@ -230,6 +272,109 @@ function createTeamMembershipChecker(token, orgName) {
   };
 }
 
+// GitHub records each reviewer's relationship to the repository on the review. Only owners, organization
+// members and collaborators can have write access, so anyone else is rejected without an API call. For the
+// rest, the repository permission decides: admin, maintain and write count, triage and read do not.
+const ASSOCIATIONS_THAT_MAY_HAVE_WRITE_ACCESS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+
+function createWriteAccessChecker(token, repository) {
+  const cache = new Map();
+
+  return async (login, association) => {
+    if (typeof association === "string" && !ASSOCIATIONS_THAT_MAY_HAVE_WRITE_ACCESS.has(association)) {
+      return false;
+    }
+
+    const key = normalizeName(login);
+
+    if (!cache.has(key)) {
+      cache.set(key, githubRequest(
+        token,
+        "GET",
+        `/repos/${repository}/collaborators/${encodeURIComponent(login)}/permission`,
+        null,
+        { allowNotFound: true },
+      ).then((result) => result?.permission === "admin" || result?.permission === "write"));
+    }
+
+    return cache.get(key);
+  };
+}
+
+function describeReviewRequestFailure(reviewer, error) {
+  const hint = reviewer.type === "team" && (error.status === 403 || error.status === 404 || error.status === 422)
+    ? " Team review requests need the configured PAT or GitHub App token, and the team must have access to this repository."
+    : "";
+  return `${describeReviewer(reviewer)}: ${error.message}${hint}`;
+}
+
+// Requests and withdraws reviewers for configured reviewRequests labels. Review requests are a
+// convenience, so every failure is reported as a warning and never changes the Label Test result.
+async function applyReviewRequests({
+  token,
+  config,
+  targetRepository,
+  pullRequestNumber,
+  pullRequestIssue,
+  labels,
+  reviews,
+  isTeamMember,
+  isAutomationActor,
+  loadIssueEvents,
+}) {
+  if (config.reviewRequests.length === 0 || isIgnoredPullRequestAuthor(config, pullRequestIssue?.user?.login)) {
+    return;
+  }
+
+  let plan;
+
+  try {
+    const [pullRequest, labelEvents] = await Promise.all([
+      getPullRequest(token, targetRepository, pullRequestNumber),
+      loadIssueEvents(),
+    ]);
+
+    plan = await planReviewRequests({
+      config,
+      prLabels: labels,
+      reviews,
+      labelEvents,
+      pendingReviewers: {
+        users: (pullRequest?.requested_reviewers ?? []).map((user) => user?.login).filter(Boolean),
+        teams: (pullRequest?.requested_teams ?? []).map((team) => team?.slug).filter(Boolean),
+      },
+      pullRequestAuthor: pullRequestIssue?.user?.login,
+      isDraft: pullRequest?.draft === true,
+      isTeamMember,
+      isAutomationActor,
+      hasWriteAccess: createWriteAccessChecker(token, targetRepository),
+    });
+  } catch (error) {
+    console.log(`::warning title=Review requests skipped::${escapeWorkflowCommand(error.message)}`);
+    return;
+  }
+
+  for (const request of plan.request) {
+    try {
+      await requestPullRequestReviewer(token, targetRepository, pullRequestNumber, request.reviewer);
+      console.log(`::notice title=Review requested::${escapeWorkflowCommand(formatReviewRequest(request))}`);
+    } catch (error) {
+      const message = describeReviewRequestFailure(request.reviewer, error);
+      console.log(`::warning title=Review request failed::${escapeWorkflowCommand(message)}`);
+    }
+  }
+
+  for (const withdrawal of plan.withdraw) {
+    try {
+      await removePullRequestReviewer(token, targetRepository, pullRequestNumber, withdrawal.reviewer);
+      console.log(`::notice title=Review request withdrawn::${escapeWorkflowCommand(formatReviewWithdrawal(withdrawal))}`);
+    } catch (error) {
+      const message = describeReviewRequestFailure(withdrawal.reviewer, error);
+      console.log(`::warning title=Review request withdrawal failed::${escapeWorkflowCommand(message)}`);
+    }
+  }
+}
+
 function printEvaluation(result) {
   if (result.passed) {
     console.log("Label Test passed.");
@@ -248,23 +393,27 @@ async function main() {
     requireOrganization: true,
     requireLabelSyncTokenSecretName: false,
   });
-  const config = validateLabelTestWorkflowConfig(await readJsonc(labelTestWorkflowConfigPath));
+  const config = validateLabelTestWorkflowConfig(
+    await readJsonc(path.join(workspaceRoot, "config", "label-test-workflow-config.jsonc")),
+  );
 
   if (validateOnly) {
     console.log("Label Test workflow configuration is valid.");
     return;
   }
 
-  const token = process.env.LABEL_SYNC_TOKEN ?? process.env.GITHUB_TOKEN;
+  const token = process.env.LABEL_SYNC_TOKEN;
   const targetRepository = process.env.TARGET_REPOSITORY;
   const pullRequestNumber = process.env.PULL_REQUEST_NUMBER;
 
-  assert(token, "LABEL_SYNC_TOKEN or GITHUB_TOKEN is required unless --validate-only is used.");
+  assert(token, "LABEL_SYNC_TOKEN is required unless --validate-only is used.");
   assert(targetRepository, "TARGET_REPOSITORY is required.");
   assert(pullRequestNumber && /^\d+$/.test(pullRequestNumber), "PULL_REQUEST_NUMBER must be a number.");
 
   const pullRequestIssue = await getPullRequestIssue(token, targetRepository, pullRequestNumber);
   const isTeamMember = createTeamMembershipChecker(token, properties.organization);
+  const isAutomationActor = createAutomationActorChecker(token);
+  const loadIssueEvents = createIssueEventsLoader(token, targetRepository, pullRequestNumber);
   const labels = await restoreStickyLabels({
     token,
     config,
@@ -273,6 +422,8 @@ async function main() {
     pullRequestIssue,
     labels: Array.isArray(pullRequestIssue.labels) ? pullRequestIssue.labels : [],
     isTeamMember,
+    isAutomationActor,
+    loadIssueEvents,
   });
   const reviews = await getPullRequestReviews(token, targetRepository, pullRequestNumber);
   const result = await evaluatePrLabelTest({
@@ -285,6 +436,19 @@ async function main() {
   });
 
   printEvaluation(result);
+
+  await applyReviewRequests({
+    token,
+    config,
+    targetRepository,
+    pullRequestNumber,
+    pullRequestIssue,
+    labels,
+    reviews,
+    isTeamMember,
+    isAutomationActor,
+    loadIssueEvents,
+  });
 
   if (!result.passed) {
     process.exitCode = 1;

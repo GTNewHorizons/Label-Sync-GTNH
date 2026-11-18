@@ -8,13 +8,6 @@ on:
         required: false
         type: boolean
         default: false
-      repository_selection_mode:
-        description: "Choose which repository list from config/label-test-workflow-config.jsonc to use."
-        required: true
-        type: choice
-        options:
-          - whitelist
-          - blacklist
       delivery_mode:
         description: "Choose whether to commit directly or open/update a PR in each selected repository."
         required: true
@@ -65,9 +58,7 @@ jobs:
         if: ${{ steps.properties.outputs.auth_mode == 'githubApp' }}
         env:
           AUTH_MODE: githubApp
-          GITHUB_APP_ID: ${{ secrets[steps.properties.outputs.github_app_id_secret_name] }}
           GITHUB_APP_PRIVATE_KEY: ${{ secrets[steps.properties.outputs.github_app_private_key_secret_name] }}
-          GITHUB_APP_INSTALLATION_ID: ${{ secrets[steps.properties.outputs.github_app_installation_id_secret_name] }}
         run: node scripts/create-github-auth-token.mjs
 
       - name: Validate Label Test workflow config
@@ -76,7 +67,6 @@ jobs:
       - name: Distribute caller workflows
         env:
           ORG_NAME: ${{ steps.properties.outputs.organization }}
-          REPOSITORY_SELECTION_MODE: ${{ inputs.repository_selection_mode }}
           DELIVERY_MODE: ${{ inputs.delivery_mode }}
           DRY_RUN: ${{ inputs.dry_run }}
           TARGET_REPOSITORIES: ${{ inputs.repositories }}

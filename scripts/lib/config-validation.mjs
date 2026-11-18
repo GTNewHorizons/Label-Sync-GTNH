@@ -24,6 +24,46 @@ function validateSecretName(value, path) {
   return value.trim();
 }
 
+function emptyAppAuthentication() {
+  return {
+    appId: "",
+    privateKeySecretName: "",
+  };
+}
+
+function validateAppId(value, path) {
+  const text = typeof value === "number" ? String(value) : value;
+  assert(typeof text === "string" && /^[1-9]\d*$/.test(text.trim()), `${path} must be a GitHub App ID (a positive number).`);
+  return text.trim();
+}
+
+// The App ID is public and the installation is looked up from the organization, so the private key is the only
+// secret a copy needs.
+function validateAppAuthentication(app, path, { required }) {
+  assert(app && typeof app === "object" && !Array.isArray(app), `${path} must be an object when provided.`);
+
+  assert(
+    app.appIdSecretName === undefined && app.installationIdSecretName === undefined,
+    `${path}.appIdSecretName and installationIdSecretName are no longer supported. Set ${path}.appId instead.`,
+  );
+
+  const validated = emptyAppAuthentication();
+
+  if (app.appId !== undefined && app.appId !== null && app.appId !== "") {
+    validated.appId = validateAppId(app.appId, `${path}.appId`);
+  }
+  if (app.privateKeySecretName !== undefined) {
+    validated.privateKeySecretName = validateSecretName(app.privateKeySecretName, `${path}.privateKeySecretName`);
+  }
+
+  if (required) {
+    assert(validated.appId, `${path}.appId is required.`);
+    assert(validated.privateKeySecretName, `${path}.privateKeySecretName must look like a GitHub secret name.`);
+  }
+
+  return validated;
+}
+
 function validateAuthentication(properties, { requireAuth, legacyTokenSecretRequired }) {
   const legacyPatSecretName = properties.labelSyncTokenSecretName;
 
@@ -34,11 +74,7 @@ function validateAuthentication(properties, { requireAuth, legacyTokenSecretRequ
         pat: {
           tokenSecretName: validateSecretName(legacyPatSecretName, "properties.labelSyncTokenSecretName"),
         },
-        githubApp: {
-          appIdSecretName: "",
-          privateKeySecretName: "",
-          installationIdSecretName: "",
-        },
+        githubApp: emptyAppAuthentication(),
       };
     }
 
@@ -59,22 +95,14 @@ function validateAuthentication(properties, { requireAuth, legacyTokenSecretRequ
   const pat = authentication.pat ?? {};
   assert(pat && typeof pat === "object" && !Array.isArray(pat), "properties.authentication.pat must be an object when provided.");
 
-  const githubApp = authentication.githubApp ?? {};
-  assert(
-    githubApp && typeof githubApp === "object" && !Array.isArray(githubApp),
-    "properties.authentication.githubApp must be an object when provided.",
-  );
-
   const validated = {
     mode: authentication.mode,
     pat: {
       tokenSecretName: "",
     },
-    githubApp: {
-      appIdSecretName: "",
-      privateKeySecretName: "",
-      installationIdSecretName: "",
-    },
+    githubApp: validateAppAuthentication(authentication.githubApp ?? {}, "properties.authentication.githubApp", {
+      required: authentication.mode === "githubApp",
+    }),
   };
 
   if (authentication.mode === "pat") {
@@ -87,40 +115,6 @@ function validateAuthentication(properties, { requireAuth, legacyTokenSecretRequ
       pat.tokenSecretName ?? legacyPatSecretName,
       "properties.authentication.pat.tokenSecretName",
     );
-  }
-
-  if (authentication.mode === "githubApp") {
-    validated.githubApp.appIdSecretName = validateSecretName(
-      githubApp.appIdSecretName,
-      "properties.authentication.githubApp.appIdSecretName",
-    );
-    validated.githubApp.privateKeySecretName = validateSecretName(
-      githubApp.privateKeySecretName,
-      "properties.authentication.githubApp.privateKeySecretName",
-    );
-    validated.githubApp.installationIdSecretName = validateSecretName(
-      githubApp.installationIdSecretName,
-      "properties.authentication.githubApp.installationIdSecretName",
-    );
-  } else {
-    if (githubApp.appIdSecretName !== undefined) {
-      validated.githubApp.appIdSecretName = validateSecretName(
-        githubApp.appIdSecretName,
-        "properties.authentication.githubApp.appIdSecretName",
-      );
-    }
-    if (githubApp.privateKeySecretName !== undefined) {
-      validated.githubApp.privateKeySecretName = validateSecretName(
-        githubApp.privateKeySecretName,
-        "properties.authentication.githubApp.privateKeySecretName",
-      );
-    }
-    if (githubApp.installationIdSecretName !== undefined) {
-      validated.githubApp.installationIdSecretName = validateSecretName(
-        githubApp.installationIdSecretName,
-        "properties.authentication.githubApp.installationIdSecretName",
-      );
-    }
   }
 
   return validated;
@@ -156,9 +150,7 @@ export function validateProperties(properties, options = {}) {
     validated.authentication = authentication;
     validated.authMode = authentication.mode;
     validated.labelSyncTokenSecretName = authentication.pat.tokenSecretName;
-    validated.githubAppIdSecretName = authentication.githubApp.appIdSecretName;
     validated.githubAppPrivateKeySecretName = authentication.githubApp.privateKeySecretName;
-    validated.githubAppInstallationIdSecretName = authentication.githubApp.installationIdSecretName;
   }
 
   if (properties.sourceRepository !== undefined) {
@@ -260,6 +252,105 @@ export function validateRepositoryEntries(entries, configKey, { configPath = "co
   }));
 }
 
+const FILTER_MODES = new Map([
+  ["whitelist", "whitelist"],
+  ["blacklist", "blacklist"],
+  ["customproperty", "customProperty"],
+]);
+const CUSTOM_PROPERTY_LOGIC = new Set(["AND", "OR"]);
+const CUSTOM_PROPERTY_RULE_MODES = new Set(["whitelist", "blacklist"]);
+const CUSTOM_PROPERTY_RULE_SHAPE = '["Property Name", "whitelist" or "blacklist", "Option", "Another Option", ...]';
+
+function validateFilterMode(value, configKey, { configPath, defaultMode }) {
+  if (value === undefined) {
+    return defaultMode;
+  }
+
+  const mode = typeof value === "string" ? FILTER_MODES.get(value.trim().toLowerCase()) : undefined;
+  assert(mode, `${configPath} field "${configKey}" must be "whitelist", "blacklist", or "customProperty".`);
+  return mode;
+}
+
+// Custom property rules select repositories by their organization custom property values. Each rule is one list:
+// ["Property Name", "whitelist" | "blacklist", "Option", "Another Option", ...]. "logic" ("AND" or "OR") decides
+// whether a repository must pass every rule or at least one. Names and options compare case-insensitively.
+export function validateCustomPropertyFilter(
+  value,
+  configKey,
+  { configPath = "config/repository-filter.jsonc", requireRules = false, modeKey = "filterMode" } = {},
+) {
+  const customProperties = value ?? {};
+  assert(
+    customProperties && typeof customProperties === "object" && !Array.isArray(customProperties),
+    `${configPath} field "${configKey}" must be an object with "logic" and "rules".`,
+  );
+
+  const rawLogic = customProperties.logic ?? "AND";
+  const logic = typeof rawLogic === "string" ? rawLogic.trim().toUpperCase() : "";
+  assert(CUSTOM_PROPERTY_LOGIC.has(logic), `${configPath} field "${configKey}.logic" must be "AND" or "OR".`);
+
+  const rawRules = customProperties.rules ?? [];
+  assert(Array.isArray(rawRules), `${configPath} field "${configKey}.rules" must contain an array.`);
+
+  const seenRules = new Set();
+  const rules = rawRules.map((rule, index) => {
+    assert(
+      Array.isArray(rule) && rule.length >= 3 && rule.every((part) => typeof part === "string" && part.trim()),
+      `"${configKey}.rules" entry at index ${index} must be a list of non-empty strings shaped like ${CUSTOM_PROPERTY_RULE_SHAPE}.`,
+    );
+
+    const [property, rawMode, ...options] = rule.map((part) => part.trim());
+    const mode = rawMode.toLowerCase();
+    assert(
+      CUSTOM_PROPERTY_RULE_MODES.has(mode),
+      `"${configKey}.rules" entry for "${property}" must use "whitelist" or "blacklist" as its second value, not "${rawMode}".`,
+    );
+
+    const ruleKey = `${normalizeName(property)}\0${mode}`;
+    assert(
+      !seenRules.has(ruleKey),
+      `Duplicate "${configKey}.rules" entry detected: "${property}" with ${mode}. Combine its options into one entry.`,
+    );
+    seenRules.add(ruleKey);
+
+    const seenOptions = new Set();
+    for (const option of options) {
+      const optionKey = normalizeName(option);
+      assert(
+        !seenOptions.has(optionKey),
+        `"${configKey}.rules" entry for "${property}" lists option "${option}" more than once.`,
+      );
+      seenOptions.add(optionKey);
+    }
+
+    return { property, mode, options };
+  });
+
+  assert(
+    !requireRules || rules.length > 0,
+    `${configPath} field "${configKey}.rules" must contain at least one rule when "${modeKey}" is "customProperty".`,
+  );
+
+  return { logic, rules };
+}
+
+// Shared by config/repository-filter.jsonc and "workflowDistribution" in config/label-test-workflow-config.jsonc.
+export function validateRepositorySelection(selection, { configPath, keyPrefix = "", defaultMode }) {
+  const modeKey = `${keyPrefix}filterMode`;
+  const filterMode = validateFilterMode(selection.filterMode, modeKey, { configPath, defaultMode });
+
+  return {
+    filterMode,
+    whitelist: validateRepositoryEntries(selection.whitelist ?? [], `${keyPrefix}whitelist`, { configPath }),
+    blacklist: validateRepositoryEntries(selection.blacklist ?? [], `${keyPrefix}blacklist`, { configPath }),
+    customProperties: validateCustomPropertyFilter(selection.customProperties, `${keyPrefix}customProperties`, {
+      configPath,
+      requireRules: filterMode === "customProperty",
+      modeKey,
+    }),
+  };
+}
+
 export function parseLabelReplacements(value) {
   if (!value || !value.trim()) {
     return [];
@@ -297,9 +388,10 @@ export function validateRepositoryFilter(repositoryFilter) {
     "config/repository-filter.jsonc must contain an object.",
   );
 
-  if (repositoryFilter.useWhitelist !== undefined) {
-    assert(typeof repositoryFilter.useWhitelist === "boolean", 'config/repository-filter.jsonc field "useWhitelist" must be a boolean.');
-  }
+  assert(
+    repositoryFilter.useWhitelist === undefined,
+    'config/repository-filter.jsonc field "useWhitelist" was replaced by "filterMode". Remove "useWhitelist" and set "filterMode" to "whitelist", "blacklist", or "customProperty".',
+  );
 
   if (repositoryFilter.automaticSync !== undefined) {
     assert(
@@ -337,9 +429,10 @@ export function validateRepositoryFilter(repositoryFilter) {
   parseLabelReplacements(labelReplacements);
 
   return {
-    useWhitelist: repositoryFilter.useWhitelist ?? false,
-    whitelist: validateRepositoryEntries(repositoryFilter.whitelist ?? [], "whitelist"),
-    blacklist: validateRepositoryEntries(repositoryFilter.blacklist ?? [], "blacklist"),
+    ...validateRepositorySelection(repositoryFilter, {
+      configPath: "config/repository-filter.jsonc",
+      defaultMode: "blacklist",
+    }),
     automaticSync: {
       enabled: automaticSync.enabled ?? false,
       deleteMissing: automaticSync.deleteMissing ?? false,
@@ -462,7 +555,86 @@ function validateLabelMember(value, { configKey, role, allowBotLogins = false })
   };
 }
 
+// A member field can hold one user or team, a comma-separated list such as "teams/admin, UltraProdigy",
+// or an array of either. Empty items, for example from a trailing comma, are ignored, but at least one
+// member is required.
+function splitLabelMemberList(value, { configKey, role }) {
+  const values = Array.isArray(value) ? value : [value];
+  const members = [];
+
+  for (const item of values) {
+    assert(typeof item === "string" && item.trim(), `${configKey} ${role} must be a non-empty string.`);
+    members.push(...item.split(",").map((part) => part.trim()).filter(Boolean));
+  }
+
+  assert(members.length > 0, `${configKey} ${role} must be a non-empty string.`);
+  return members;
+}
+
 function validateLabelMemberEntries(entries, { configKey, role, allowBotLogins = false }) {
+  assert(
+    Array.isArray(entries),
+    `config/label-test-workflow-config.jsonc field "${configKey}" must contain an array.`,
+  );
+
+  const seen = new Set();
+
+  // Entries listing several members are expanded to one validated entry per member, so the rest of
+  // Label Test keeps working with a single member per entry.
+  return entries.flatMap((entry, index) => {
+    assert(
+      entry && typeof entry === "object" && !Array.isArray(entry),
+      `${configKey} entry at index ${index} must be an object.`,
+    );
+    assert(
+      typeof entry.label === "string" && entry.label.trim(),
+      `${configKey} entry at index ${index} must include a non-empty label.`,
+    );
+
+    const label = entry.label.trim();
+
+    return splitLabelMemberList(entry[role], { configKey, role }).map((value) => {
+      const member = validateLabelMember(value, { configKey, role, allowBotLogins });
+      const key = `${normalizeName(label)}\0${normalizeName(member.value)}`;
+      assert(
+        !seen.has(key),
+        `Duplicate ${configKey} entry detected: "${label}" with ${role} "${member.value}".`,
+      );
+      seen.add(key);
+
+      return {
+        label,
+        [role]: member,
+      };
+    });
+  });
+}
+
+function validateProtectedLabelApprovals(entries) {
+  return validateLabelMemberEntries(entries, {
+    configKey: "protectedLabelApprovals",
+    role: "approver",
+  });
+}
+
+// Sticky label removers may include GitHub App bot logins such as "label-sync-app[bot]" so an
+// automation identity (for example the Remove-Labels workflow token) can be allowed to remove them.
+function validateStickyLabels(entries) {
+  return validateLabelMemberEntries(entries, {
+    configKey: "stickyLabels",
+    role: "remover",
+    allowBotLogins: true,
+  });
+}
+
+const REVIEW_REQUEST_TIMINGS = new Set(["labeled", "afterApproval"]);
+
+// Review requests ask a user or team to review a PR that has the label. "labeled" requests as soon as the
+// label is present; "afterApproval" waits for an approval from someone with write access who is not the
+// reviewer (or not on the reviewer team). "approvedBy" optionally sets which approvals count in order to
+// trigger the request.
+function validateReviewRequests(entries) {
+  const configKey = "reviewRequests";
   assert(
     Array.isArray(entries),
     `config/label-test-workflow-config.jsonc field "${configKey}" must contain an array.`,
@@ -481,35 +653,53 @@ function validateLabelMemberEntries(entries, { configKey, role, allowBotLogins =
     );
 
     const label = entry.label.trim();
-    const member = validateLabelMember(entry[role], { configKey, role, allowBotLogins });
-    const key = `${normalizeName(label)}\0${normalizeName(member.value)}`;
+    const reviewer = validateLabelMember(entry.reviewer, { configKey, role: "reviewer" });
+    const when = entry.when ?? "labeled";
+    assert(
+      REVIEW_REQUEST_TIMINGS.has(when),
+      `${configKey} entry "${label}" field "when" must be "labeled" or "afterApproval".`,
+    );
+
+    let approvedBy = [];
+
+    if (entry.approvedBy !== undefined) {
+      assert(
+        when === "afterApproval",
+        `${configKey} entry "${label}" field "approvedBy" can only be used with "when": "afterApproval".`,
+      );
+
+      assert(
+        typeof entry.approvedBy === "string" || Array.isArray(entry.approvedBy),
+        `${configKey} entry "${label}" field "approvedBy" must be a user, a "teams/<slug>" team, or a list of them.`,
+      );
+
+      const values = splitLabelMemberList(entry.approvedBy, { configKey, role: "approvedBy" });
+      const seenApprovers = new Set();
+      approvedBy = values.map((value) => {
+        const member = validateLabelMember(value, { configKey, role: "approvedBy" });
+        const memberKey = normalizeName(member.value);
+        assert(
+          !seenApprovers.has(memberKey),
+          `${configKey} entry "${label}" lists approvedBy "${member.value}" more than once.`,
+        );
+        seenApprovers.add(memberKey);
+        return member;
+      });
+    }
+
+    const key = `${normalizeName(label)}\0${normalizeName(reviewer.value)}`;
     assert(
       !seen.has(key),
-      `Duplicate ${configKey} entry detected: "${label}" with ${role} "${member.value}".`,
+      `Duplicate ${configKey} entry detected: "${label}" with reviewer "${reviewer.value}".`,
     );
     seen.add(key);
 
     return {
       label,
-      [role]: member,
+      reviewer,
+      when,
+      approvedBy,
     };
-  });
-}
-
-function validateProtectedLabelApprovals(entries) {
-  return validateLabelMemberEntries(entries, {
-    configKey: "protectedLabelApprovals",
-    role: "approver",
-  });
-}
-
-// Sticky label removers may include GitHub App bot logins such as "label-sync-app[bot]" so an
-// automation identity (for example the Remove-Labels workflow token) can be allowed to remove them.
-function validateStickyLabels(entries) {
-  return validateLabelMemberEntries(entries, {
-    configKey: "stickyLabels",
-    role: "remover",
-    allowBotLogins: true,
   });
 }
 
@@ -533,27 +723,25 @@ export function validateLabelTestWorkflowConfig(labelTestWorkflowConfig) {
     'config/label-test-workflow-config.jsonc field "workflowDistribution" must contain an object.',
   );
 
+  const failingLabels = validateLabelNameEntries(labelTestWorkflowConfig.failingLabels ?? [], "failingLabels");
+  const stickyLabels = validateStickyLabels(labelTestWorkflowConfig.stickyLabels ?? []);
+
   return {
     requiredLabels: validateLabelNameEntries(labelTestWorkflowConfig.requiredLabels ?? [], "requiredLabels"),
-    failingLabels: validateLabelNameEntries(labelTestWorkflowConfig.failingLabels ?? [], "failingLabels"),
+    failingLabels,
     ignoredPullRequestAuthors: validatePullRequestAuthorEntries(
       labelTestWorkflowConfig.ignoredPullRequestAuthors ?? [],
     ),
     repositoryLabels: validateRepositoryLabelEntries(labelTestWorkflowConfig.repositoryLabels ?? {}),
     protectedLabelApprovals: validateProtectedLabelApprovals(labelTestWorkflowConfig.protectedLabelApprovals ?? []),
-    stickyLabels: validateStickyLabels(labelTestWorkflowConfig.stickyLabels ?? []),
+    stickyLabels,
     stickyLabelComment: validateStickyLabelComment(labelTestWorkflowConfig.stickyLabelComment ?? false),
-    workflowDistribution: {
-      whitelist: validateRepositoryEntries(
-        workflowDistribution.whitelist ?? [],
-        "workflowDistribution.whitelist",
-        { configPath: "config/label-test-workflow-config.jsonc" },
-      ),
-      blacklist: validateRepositoryEntries(
-        workflowDistribution.blacklist ?? [],
-        "workflowDistribution.blacklist",
-        { configPath: "config/label-test-workflow-config.jsonc" },
-      ),
-    },
+    reviewRequests: validateReviewRequests(labelTestWorkflowConfig.reviewRequests ?? []),
+    // Defaults to whitelist so a config without "filterMode" distributes to no repositories until some are listed.
+    workflowDistribution: validateRepositorySelection(workflowDistribution, {
+      configPath: "config/label-test-workflow-config.jsonc",
+      keyPrefix: "workflowDistribution.",
+      defaultMode: "whitelist",
+    }),
   };
 }

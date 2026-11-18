@@ -126,44 +126,88 @@ const configDefaults = {
   },
 
   // If a listed label is present on a PR, at least one listed user or team member for that label must have
-  // latest effective review state APPROVED.
+  // latest effective review state APPROVED. List several approvers in one entry separated by commas.
   "protectedLabelApprovals": [
-    // { "label": "Affects Balance", "approver": "teams/admin" },
-    // { "label": "Affects Balance", "approver": "UltraProdigy" }
+    // { "label": "Affects Balance", "approver": "teams/admin, UltraProdigy" }
   ],
 
   // Sticky labels stay on a PR once applied. If anyone other than a listed remover (user, team member, or
   // GitHub App bot login such as "my-app[bot]") takes one off, Label Test puts it straight back.
   // Combine with protectedLabelApprovals so the label cannot be removed to skip a required approval.
-  // Removals made by Label Sync workflows such as Remove-Labels are always allowed.
+  // Removals made by Label Sync workflows such as Remove-Labels are always allowed. List several removers in
+  // one entry separated by commas.
   "stickyLabels": [
-    // { "label": "Affects Balance", "remover": "teams/admin" },
-    // { "label": "Affects Balance", "remover": "UltraProdigy" }
+    // { "label": "Affects Balance", "remover": "teams/admin, UltraProdigy" }
   ],
 
   // When true, the first time a sticky label is restored on a PR, Label Test posts a one-time comment naming
   // who can remove it. Later restorations of the same label on that PR do not comment again.
   "stickyLabelComment": false,
 
-  // Separate from config/repository-filter.jsonc. The distributor workflow chooses whitelist or blacklist mode
-  // when it is manually run.
+  // Review requests ask a user or team to review a PR that has the label. "when" picks the timing:
+  //   "labeled" (default): request the reviewer as soon as the label is on the PR.
+  //   "afterApproval": wait until someone with write access to the repository, who is not the reviewer (and
+  //   not on the reviewer team), approves, then request the reviewer. Approvals from people without write
+  //   access, such as contributors outside the organization, never count. If the reviewer has already
+  //   approved, nothing is requested.
+  // "approvedBy" (optional, afterApproval only) sets which approvals count in order to trigger the request,
+  // as a comma-separated list of users or teams; they still need write access. Leave it out and any approval
+  // from someone with write access outside the reviewer team triggers it. It only affects the request, not
+  // whether Label Test passes; that is protectedLabelApprovals.
+  // Nothing is requested on draft PRs. Each reviewer is requested once per label application or new
+  // triggering approval, so a request removed by hand stays removed. If the label is removed, a pending
+  // request made by Label Sync is withdrawn. Team reviewers need the configured PAT or GitHub App token,
+  // and the team must have access to the repository.
+  "reviewRequests": [
+    // { "label": "Requires Admin", "reviewer": "teams/admin" },
+    // { "label": "Affects Balance", "reviewer": "teams/balance-team", "when": "afterApproval" },
+    // { "label": "Needs Art Review", "reviewer": "teams/art", "when": "afterApproval", "approvedBy": "teams/developers, UltraProdigy" }
+  ],
+
+  // Chooses which repositories 05 - Distribute-Label-Workflow installs the Label Test workflows in. This is
+  // separate from config/repository-filter.jsonc but uses the same format. The workflow's optional
+  // "repositories" input overrides it for a single run.
   "workflowDistribution": {
+    // "whitelist": only the repositories listed in "whitelist".
+    // "blacklist": every discovered org repository except those listed in "blacklist".
+    // "customProperty": repositories chosen by the rules in "customProperties". The Label Sync token needs the
+    //                   organization "Custom properties" read permission for this mode.
+    "filterMode": "whitelist",
+
     "whitelist": [
       // "sandbox-repo",
       // "your-org-name/important-repo"
     ],
+
     "blacklist": [
       // "do-not-touch",
       // "your-org-name/private-internal-tools"
-    ]
+    ],
+
+    // "logic": "AND" means a repository must pass every rule, "OR" means it must pass at least one.
+    // Each rule is one list: ["Property Name", "whitelist" or "blacklist", "Option", "Another Option", ...]
+    //   "whitelist": the repository's value for the property must be one of the listed options.
+    //   "blacklist": the repository's value must not be any of the listed options. Repositories with no value pass.
+    // Options match the property value exactly, ignoring case. For true/false properties use "true" or "false".
+    "customProperties": {
+      "logic": "AND",
+      "rules": [
+        // ["Team", "whitelist", "Core", "Addons"],
+        // ["Lifecycle", "blacklist", "Deprecated"]
+      ]
+    }
   }
 }
 `,
-  "repository-filter.jsonc": `// Set to true to sync only the repositories listed in "whitelist".
-// Set to false to sync every discovered org repository except those listed in "blacklist".
+  "repository-filter.jsonc": `// "filterMode" chooses which repositories Label Sync works on:
+//   "whitelist": only the repositories listed in "whitelist".
+//   "blacklist": every discovered org repository except those listed in "blacklist".
+//   "customProperty": repositories chosen by their organization custom property values, using the rules in
+//                     "customProperties". The Label Sync token needs the organization "Custom properties" read
+//                     permission for this mode.
 // The configured source repository does not need to be listed here and is skipped even if listed.
 {
-  "useWhitelist": true,
+  "filterMode": "whitelist",
 
   "automaticSync": {
     // Automatic Org-Label-Sync runs once daily. To change the frequency, edit the schedule in
@@ -174,17 +218,34 @@ const configDefaults = {
     "labelReplacements": ""
   },
 
-  // Used only when "useWhitelist" is true.
+  // Used only when "filterMode" is "whitelist".
   "whitelist": [
     // "sandbox-repo",
     // "your-org-name/important-repo"
   ],
 
-  // Used only when "useWhitelist" is false.
+  // Used only when "filterMode" is "blacklist".
   "blacklist": [
     // "do-not-touch",
     // "your-org-name/private-internal-tools"
-  ]
+  ],
+
+  // Used only when "filterMode" is "customProperty".
+  // "logic" decides how several rules combine: "AND" means a repository must pass every rule, "OR" means it must
+  // pass at least one.
+  // Each rule is one list: ["Property Name", "whitelist" or "blacklist", "Option", "Another Option", ...]
+  //   "whitelist": the repository's value for the property must be one of the listed options.
+  //   "blacklist": the repository's value must not be any of the listed options. Repositories with no value pass.
+  // Options match the property value exactly, ignoring case. For true/false properties use "true" or "false".
+  // Property names and options are checked against the organization's custom properties when a workflow runs,
+  // so a typo fails the run instead of selecting the wrong repositories.
+  "customProperties": {
+    "logic": "AND",
+    "rules": [
+      // ["Team", "whitelist", "Core", "Addons"],
+      // ["Lifecycle", "blacklist", "Deprecated"]
+    ]
+  }
 }
 `,
 };

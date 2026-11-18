@@ -27,14 +27,15 @@ on:
 # artifact is untrusted input and is validated against the workflow run's recorded head
 # SHA before the configured PAT or GitHub App token reruns the authoritative policy run.
 
-# pull-requests: write is only used to re-apply sticky labels and post the one-time sticky label
-# notice. The configured PAT or GitHub App token is preferred for both; this GITHUB_TOKEN grant is the
-# fallback when no configured token exists.
+# Label and comment calls use the configured PAT or GitHub App token, which is what can read team
+# membership. GITHUB_TOKEN downloads the review artifact, posts the ignored-author status, and reruns the
+# policy run after a review (actions: write), so the configured App never needs Actions access. Callers
+# generated before actions: write was added fail to start until 05 - Distribute-Label-Workflow runs again.
 permissions:
-  actions: read
+  actions: write
   contents: read
   issues: read
-  pull-requests: write
+  pull-requests: read
   statuses: write
 
 jobs:
@@ -74,7 +75,6 @@ jobs:
         env:
           AUTH_MODE: pat
           PAT_TOKEN: ${{ secrets[steps.properties.outputs.pat_token_secret_name] }}
-          GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/create-github-auth-token.mjs
 
       - name: Resolve GitHub App auth token
@@ -82,9 +82,7 @@ jobs:
         if: ${{ steps.properties.outputs.auth_mode == 'githubApp' }}
         env:
           AUTH_MODE: githubApp
-          GITHUB_APP_ID: ${{ secrets[steps.properties.outputs.github_app_id_secret_name] }}
           GITHUB_APP_PRIVATE_KEY: ${{ secrets[steps.properties.outputs.github_app_private_key_secret_name] }}
-          GITHUB_APP_INSTALLATION_ID: ${{ secrets[steps.properties.outputs.github_app_installation_id_secret_name] }}
         run: node scripts/create-github-auth-token.mjs
 
       - name: Check PR labels and approvals
@@ -95,13 +93,13 @@ jobs:
           LABEL_EVENT_ACTION: ${{ github.event.action }}
           LABEL_EVENT_LABEL: ${{ github.event.label.name }}
           LABEL_EVENT_SENDER: ${{ github.event.sender.login }}
-          GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/check-pr-label-policy.mjs
 
       - name: Rerun authoritative Label Test
         if: ${{ github.event_name == 'workflow_run' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          RERUN_TOKEN: ${{ github.token }}
           TARGET_REPOSITORY: ${{ github.repository }}
           PULL_REQUEST_NUMBER_FILE: ${{ runner.temp }}/label-test-review-context/pr-number.txt
           REVIEW_SIGNAL_HEAD_SHA: ${{ inputs.review_signal_head_sha }}
