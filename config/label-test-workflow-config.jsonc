@@ -28,7 +28,8 @@
     "Ongoing Freeze - Do NOT Merge",
     "❌ There is a Merge Conflict With Another PR",
     "⚠️ AUTHOR MERGE ONLY",
-    "Frozen PR"
+    "Frozen PR",
+    "Wait for Merge"
   ],
 
   // Pull requests opened by these GitHub logins pass Label Test without applying label or approval rules.
@@ -54,7 +55,7 @@
   // latest effective review state APPROVED. List several approvers in one entry separated by commas.
   "protectedLabelApprovals": [
     // { "label": "Affects Balance", "approver": "teams/admin, UltraProdigy" }
-    { "label": "Affects Balance", "approver": "teams/balancing-review" },
+    { "label": "Affects Balance", "approver": "teams/game-balance-leads" },
     { "label": "Requires Admin", "approver": "teams/Admin" },
     { "label": "Asset Change", "approver": "teams/Admin" }
   ],
@@ -66,7 +67,7 @@
   // one entry separated by commas.
   "stickyLabels": [
     // { "label": "Affects Balance", "remover": "teams/admin, UltraProdigy" }
-    { "label": "Affects Balance", "remover": "teams/balancing-review" },
+    { "label": "Affects Balance", "remover": "teams/game-balance-leads" },
     { "label": "Affects Balance", "remover": "teams/admin" }
   ],
 
@@ -92,6 +93,9 @@
     // { "label": "Requires Admin", "reviewer": "teams/admin" },
     // { "label": "Affects Balance", "reviewer": "teams/balance-team", "when": "afterApproval" },
     // { "label": "Needs Art Review", "reviewer": "teams/art", "when": "afterApproval", "approvedBy": "teams/developers, UltraProdigy" }
+    { "label": "Requires Admin", "reviewer": "teams/admin" },
+    { "label": "Affects Balance", "reviewer": "teams/game-balance-leads", "when": "afterApproval", "approvedBy": "teams/developers" },
+    { "label": "Type: Quest", "reviewer": "UltraProdigy" }
   ],
 
   // Chooses which repositories 05 - Distribute-Label-Workflow installs the Label Test workflows in. This is
