@@ -67,6 +67,7 @@
   // Renamed files also match on their old path. A PR with 3000 or more changed files gets every path label.
   "pathLabels": [
     // { "label": "Asset Change", "paths": ["**/assets/**"] }
+    { "label": "Asset Change", "paths": ["**/assets/**"] }
   ],
 
   // Sticky labels stay on a PR once applied. If anyone other than a listed remover (user, team member, or
@@ -77,7 +78,8 @@
   "stickyLabels": [
     // { "label": "Affects Balance", "remover": "teams/admin, UltraProdigy" }
     { "label": "Affects Balance", "remover": "teams/game-balance-leads" },
-    { "label": "Affects Balance", "remover": "teams/admin" }
+    { "label": "Affects Balance", "remover": "teams/admin" },
+    { "label": "Asset Change", "remover": "teams/Admin" }
   ],
 
   // When true, the first time a sticky label is restored on a PR, Label Test posts a one-time comment naming
