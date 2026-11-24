@@ -67,7 +67,7 @@
   // Renamed files also match on their old path. A PR with 3000 or more changed files gets every path label.
   "pathLabels": [
     // { "label": "Asset Change", "paths": ["**/assets/**"] }
-    { "label": "Asset Change", "paths": ["**/assets/**"] }
+    { "label": "Asset Change", "paths": ["**/assets/**/*.{png,jpg,jpeg,gif,mcmeta,ogg,wav,mp3,psd,xcf,pdn,obj,mtl,blend,tcn}"] }
   ],
 
   // Sticky labels stay on a PR once applied. If anyone other than a listed remover (user, team member, or
