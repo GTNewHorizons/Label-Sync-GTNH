@@ -53,6 +53,11 @@
     "description": "Changes assets, usually textures, and nothing more."
   },
   {
+    "name": "Automated Review",
+    "color": "c5def5",
+    "description": "Queues the pull request for automatic review"
+  },
+  {
     "name": "Breaking Change",
     "color": "fc7a7b",
     "description": "When a PR involves a recipe, structure, or other change that will break existing setups."
