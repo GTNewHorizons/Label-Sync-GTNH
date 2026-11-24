@@ -106,7 +106,8 @@
     // { "label": "Needs Art Review", "reviewer": "teams/art", "when": "afterApproval", "approvedBy": "teams/developers, UltraProdigy" }
     { "label": "Requires Admin", "reviewer": "teams/admin" },
     { "label": "Affects Balance", "reviewer": "teams/game-balance-leads", "when": "afterApproval", "approvedBy": "teams/developers" },
-    { "label": "Type: Quest", "reviewer": "UltraProdigy" }
+    { "label": "Type: Quest", "reviewer": "UltraProdigy" },
+    { "label": "Asset Change", "reviewer": "teams/admin" }
   ],
 
   // Chooses which repositories 05 - Distribute-Label-Workflow installs the Label Test workflows in. This is
